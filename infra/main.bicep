@@ -66,7 +66,7 @@ param deploymentSkuCapacity int = 10
 // ── Secondary model deployment parameters ───
 
 @description('Name of the secondary model to deploy. Leave empty to skip.')
-param model2Name string = 'gpt-4.1-mini'
+param model2Name string = ''
 
 @description('Format of the secondary model.')
 param model2Format string = 'OpenAI'
@@ -86,7 +86,7 @@ param deployment2SkuCapacity int = 10
 // ── Third model deployment parameters ────
 
 @description('Name of the third model to deploy. Leave empty to skip.')
-param model3Name string = 'gpt-oss-120b'
+param model3Name string = ''
 
 @description('Format of the third model.')
 param model3Format string = 'OpenAI-OSS'

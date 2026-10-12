@@ -1,110 +1,141 @@
 #!/usr/bin/env python3
-"""
-Microsoft Foundry Models - Responses API Example (Plain OpenAI SDK)
-Uses the standard OpenAI client with the Foundry project endpoint + /openai/v1 suffix.
+"""Microsoft Foundry Responses API examples using the standard OpenAI SDK."""
 
-Surfaces structured reasoning summaries for any model that emits a `reasoning`
-output item. As of the May 2026 Foundry service update, non-OpenAI reasoning
-models (e.g. DeepSeek-R1) emit reasoning summaries through the same in-schema
-shape as native OpenAI reasoning models — no special handling per model family.
-"""
+from __future__ import annotations
 
-import os
+import argparse
 import sys
+from collections.abc import Sequence
+from pathlib import Path
+from typing import cast
 
-from azure.identity import DefaultAzureCredential, get_bearer_token_provider
-from dotenv import load_dotenv
-from openai import OpenAI
+from azure.core.exceptions import AzureError
+from openai import OpenAIError
+from openai.types.shared.reasoning_effort import ReasoningEffort
+from pydantic import ValidationError
 
+from responses_common import ExampleError, foundry_client, load_config
+from responses_features import (
+    DEFAULT_CACHE_KEY,
+    DEFAULT_PROMPT,
+    SUPPORTED_REASONING_EFFORTS,
+    run_basic,
+    run_conversation_state,
+    run_function_call,
+    run_image_input,
+    run_parallel_function_calls,
+    run_prompt_caching,
+    run_reasoning,
+    run_streaming,
+    run_structured_output,
+)
 
-def extract_reasoning_summary(response) -> str:
-    """Return concatenated reasoning summary text from a Responses API result.
-
-    Walks `response.output` for items of type `reasoning` and joins the `text`
-    field of each entry in their `summary` list. Returns "" if no reasoning
-    items or no summary text are present (e.g. non-reasoning models, or
-    reasoning models where summaries are not enabled).
-    """
-    parts: list[str] = []
-    for item in getattr(response, "output", None) or []:
-        if getattr(item, "type", None) != "reasoning":
-            continue
-        for s in getattr(item, "summary", None) or []:
-            text = getattr(s, "text", None) or (s.get("text") if isinstance(s, dict) else None)
-            if text:
-                parts.append(text)
-    return "\n".join(parts).strip()
-
-
-def print_response(label: str, response) -> None:
-    """Print final answer, optional reasoning summary, status, and token usage."""
-    print(f"Response: {response.output_text}")
-
-    summary = extract_reasoning_summary(response)
-    if summary:
-        print(f"\nReasoning summary:\n{summary}")
-
-    print(f"\nStatus:   {response.status}")
-    usage = response.usage
-    out_tokens = getattr(usage, "output_tokens", None)
-    details = getattr(usage, "output_tokens_details", None)
-    reasoning_tokens = getattr(details, "reasoning_tokens", None) if details else None
-    if reasoning_tokens is not None:
-        print(f"Output tokens: {out_tokens} (reasoning: {reasoning_tokens})\n")
-    else:
-        print(f"Output tokens: {out_tokens}\n")
+EXAMPLES = (
+    "basic",
+    "streaming",
+    "function-call",
+    "parallel-functions",
+    "structured-output",
+    "reasoning",
+    "prompt-caching",
+    "image-input",
+    "conversation-state",
+)
 
 
-def main():
-    """Run Responses API examples using the plain OpenAI SDK."""
-    load_dotenv(override=True)
-    print("Microsoft Foundry Models - Responses API (Plain OpenAI SDK)\n")
-
-    endpoint = os.environ.get("AZURE_AI_PROJECT_ENDPOINT")
-    if not endpoint:
-        print("Error: AZURE_AI_PROJECT_ENDPOINT must be set.")
-        sys.exit(1)
-
-    # Build the base URL: project endpoint + /openai/v1 (no api-version needed)
-    base_url = endpoint.rstrip("/") + "/openai/v1"
-
-    # Use get_bearer_token_provider for automatic token refresh
-    credential = DefaultAzureCredential()
-    client = OpenAI(
-        base_url=base_url,
-        api_key=get_bearer_token_provider(credential, "https://ai.azure.com/.default"),
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description=(
+            "Run one Microsoft Foundry Responses API example. "
+            "The default basic example makes exactly one model request."
+        )
     )
-
-    # --- Example 1: OpenAI model (gpt-4.1-mini) ---
-    # Note: gpt-4.1-mini is not a reasoning model. If you swap in an OpenAI
-    # reasoning model (o4-mini, o3, gpt-5.x), pass reasoning={"effort":"low"|
-    # "medium"|"high"} to control reasoning compute. Recovering human-readable
-    # summary text via reasoning.summary currently requires OpenAI organization
-    # verification — see https://github.com/Azure-Samples/ai-model-start/issues/13.
-    openai_model = os.environ.get("AZURE_MODEL_2_DEPLOYMENT_NAME", "gpt-4.1-mini")
-    print(f"Example 1: OpenAI model ({openai_model})\n")
-    print("Waiting for response...", flush=True)
-    response1 = client.responses.create(
-        model=openai_model,
-        input="Explain quantum computing in 3 sentences.",
-        max_output_tokens=500,
+    parser.add_argument("--example", choices=EXAMPLES, default="basic")
+    parser.add_argument(
+        "--model",
+        help=(
+            "Deployment alias to call. Defaults to AZURE_MODEL_DEPLOYMENT_NAME, "
+            "then DeepSeek-R1-0528."
+        ),
     )
-    print_response(f"Example 1: {openai_model}", response1)
-
-    # --- Example 2: Non-OpenAI reasoning model (DeepSeek-R1-0528) ---
-    # As of the May 2026 Foundry service update, DeepSeek-R1 emits a structured
-    # `reasoning` output item with `summary[].text` populated by default — the
-    # same shape OpenAI reasoning models use when summaries are enabled.
-    deepseek_model = os.environ.get("AZURE_MODEL_DEPLOYMENT_NAME", "DeepSeek-R1-0528")
-    print(f"Example 2: Non-OpenAI reasoning model ({deepseek_model})\n")
-    print("Waiting for response (reasoning models can take 30-60s)...", flush=True)
-    response2 = client.responses.create(
-        model=deepseek_model,
-        input="What are the top 3 benefits of cloud computing? Be concise.",
-        max_output_tokens=2000,
+    parser.add_argument("--prompt", default=DEFAULT_PROMPT, help="Prompt for basic/streaming.")
+    parser.add_argument("--timeout", type=float, default=60.0, help="Request timeout in seconds.")
+    parser.add_argument(
+        "--max-output-tokens",
+        type=int,
+        default=4096,
+        help="Maximum output tokens per request, including reasoning tokens.",
     )
-    print_response(f"Example 2: {deepseek_model}", response2)
+    parser.add_argument(
+        "--max-concurrency",
+        type=int,
+        default=4,
+        help="Local worker bound for --example parallel-functions (1-16).",
+    )
+    parser.add_argument(
+        "--reasoning-effort",
+        choices=SUPPORTED_REASONING_EFFORTS,
+        default="medium",
+        help="SDK-supported effort passed unchanged to the request.",
+    )
+    parser.add_argument(
+        "--cache-key",
+        default=DEFAULT_CACHE_KEY,
+        help="Stable key for --example prompt-caching.",
+    )
+    parser.add_argument(
+        "--image",
+        type=Path,
+        help="Local image path required by --example image-input.",
+    )
+    return parser
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+
+    try:
+        config = load_config(
+            model=args.model,
+            timeout_seconds=args.timeout,
+            max_output_tokens=args.max_output_tokens,
+        )
+        with foundry_client(config) as client:
+            if args.example == "basic":
+                run_basic(client, config, prompt=args.prompt)
+            elif args.example == "streaming":
+                run_streaming(client, config, prompt=args.prompt)
+            elif args.example == "function-call":
+                run_function_call(client, config)
+            elif args.example == "parallel-functions":
+                run_parallel_function_calls(
+                    client,
+                    config,
+                    max_concurrency=args.max_concurrency,
+                )
+            elif args.example == "structured-output":
+                run_structured_output(client, config)
+            elif args.example == "reasoning":
+                run_reasoning(
+                    client,
+                    config,
+                    effort=cast(ReasoningEffort, args.reasoning_effort),
+                )
+            elif args.example == "prompt-caching":
+                run_prompt_caching(client, config, cache_key=args.cache_key)
+            elif args.example == "image-input":
+                if args.image is None:
+                    raise ExampleError("--image is required for --example image-input.")
+                run_image_input(client, config, image_path=args.image)
+            elif args.example == "conversation-state":
+                run_conversation_state(client, config)
+    except (AzureError, ExampleError, OpenAIError, OSError, ValidationError) as error:
+        print(f"Error: {error}", file=sys.stderr)
+        return 1
+
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

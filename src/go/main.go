@@ -1,11 +1,5 @@
-// Microsoft Foundry Models - Responses API Example (Plain OpenAI SDK)
-// Uses the standard openai-go package with the project endpoint + /openai/v1 suffix.
-// No api-version query parameter needed. No dependency on Azure AI SDKs for model invocation.
-//
-// Surfaces structured reasoning summaries for any model that emits a `reasoning`
-// output item. As of the May 2026 Foundry service update, non-OpenAI reasoning
-// models (e.g. DeepSeek-R1) emit reasoning summaries through the same in-schema
-// shape as native OpenAI reasoning models — no special handling per model family.
+// Microsoft Foundry Responses API quickstart using the standard OpenAI SDK.
+// Makes one request to the deployment alias in AZURE_MODEL_DEPLOYMENT_NAME.
 package main
 
 import (
@@ -21,41 +15,7 @@ import (
 	"github.com/openai/openai-go/v3/responses"
 )
 
-// extractReasoningSummary returns the concatenated reasoning summary text from
-// a Responses API result. It walks resp.Output for items of type "reasoning"
-// and joins the Text field of each entry in their Summary list. Returns ""
-// if no reasoning items or no summary text are present.
-func extractReasoningSummary(resp *responses.Response) string {
-	var parts []string
-	for _, item := range resp.Output {
-		if item.Type != "reasoning" {
-			continue
-		}
-		for _, s := range item.Summary {
-			if s.Text != "" {
-				parts = append(parts, s.Text)
-			}
-		}
-	}
-	return strings.TrimSpace(strings.Join(parts, "\n"))
-}
-
-func printResponse(resp *responses.Response) {
-	fmt.Printf("Response: %s\n", resp.OutputText())
-
-	if summary := extractReasoningSummary(resp); summary != "" {
-		fmt.Printf("\nReasoning summary:\n%s\n", summary)
-	}
-
-	fmt.Printf("\nStatus:   %s\n", resp.Status)
-	fmt.Printf("Output tokens: %d (reasoning: %d)\n\n",
-		resp.Usage.OutputTokens,
-		resp.Usage.OutputTokensDetails.ReasoningTokens)
-}
-
 func main() {
-	fmt.Println("Microsoft Foundry Models - Responses API (Plain OpenAI SDK - Go)\n")
-
 	endpoint := os.Getenv("AZURE_AI_PROJECT_ENDPOINT")
 	if endpoint == "" {
 		fmt.Fprintln(os.Stderr, "Error: AZURE_AI_PROJECT_ENDPOINT must be set.")
@@ -85,23 +45,14 @@ func main() {
 		option.WithAPIKey(token.Token),
 	)
 
-	// --- Example 1: OpenAI model (gpt-4.1-mini) ---
-	// Note: gpt-4.1-mini is not a reasoning model. If you swap in an OpenAI
-	// reasoning model (o4-mini, o3, gpt-5.x), set Reasoning with an Effort level
-	// (low/medium/high) on ResponseNewParams to control reasoning compute.
-	// Recovering human-readable summary text via Reasoning.Summary currently
-	// requires OpenAI organization verification — see
-	// https://github.com/Azure-Samples/ai-model-start/issues/13.
-	openaiModel := os.Getenv("AZURE_MODEL_2_DEPLOYMENT_NAME")
-	if openaiModel == "" {
-		openaiModel = "gpt-4.1-mini"
+	model := os.Getenv("AZURE_MODEL_DEPLOYMENT_NAME")
+	if model == "" {
+		model = "DeepSeek-R1-0528"
 	}
-	fmt.Printf("Example 1: OpenAI model (%s)\n\n", openaiModel)
-	fmt.Println("Waiting for response...")
-	resp1, err := client.Responses.New(ctx, responses.ResponseNewParams{
-		Model: openaiModel,
+	resp, err := client.Responses.New(ctx, responses.ResponseNewParams{
+		Model: model,
 		Input: responses.ResponseNewParamsInputUnion{
-			OfString: openai.String("Explain quantum computing in 3 sentences."),
+			OfString: openai.String("Explain quantum computing in three sentences."),
 		},
 		MaxOutputTokens: openai.Int(500),
 	})
@@ -109,28 +60,8 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
-	printResponse(resp1)
 
-	// --- Example 2: Non-OpenAI reasoning model (DeepSeek-R1-0528) ---
-	// As of the May 2026 Foundry service update, DeepSeek-R1 emits a structured
-	// `reasoning` output item with Summary[].Text populated by default — the same
-	// shape OpenAI reasoning models use when summaries are enabled.
-	deepseekModel := os.Getenv("AZURE_MODEL_DEPLOYMENT_NAME")
-	if deepseekModel == "" {
-		deepseekModel = "DeepSeek-R1-0528"
-	}
-	fmt.Printf("Example 2: Non-OpenAI reasoning model (%s)\n\n", deepseekModel)
-	fmt.Println("Waiting for response (reasoning models can take 30-60s)...")
-	resp2, err := client.Responses.New(ctx, responses.ResponseNewParams{
-		Model: deepseekModel,
-		Input: responses.ResponseNewParamsInputUnion{
-			OfString: openai.String("What are the top 3 benefits of cloud computing? Be concise."),
-		},
-		MaxOutputTokens: openai.Int(2000),
-	})
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
-	}
-	printResponse(resp2)
+	fmt.Println(resp.OutputText())
+	fmt.Printf("\nStatus: %s\n", resp.Status)
+	fmt.Printf("Model deployment: %s\n", model)
 }

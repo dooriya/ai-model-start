@@ -13,16 +13,16 @@ products:
 - microsoft-foundry
 urlFragment: ai-model-start
 name: The AI Model Starter Kit
-description: Call any Foundry models - GPT, DeepSeek, Grok, Llama, and more - using stable OpenAI SDKs and the GA OpenAI Responses API. Production grade, enterprise friendly and secure with EntraID keyless authentication - no API keys, and zero secrets to manage. Includes working examples in Python, TypeScript, C#, Java, and Go.
+description: Call one selected Microsoft Foundry model deployment using standard OpenAI SDKs, the Responses API, and EntraID keyless authentication. Includes quickstarts in Python, TypeScript, C#, Java, and Go plus explicit Python feature examples.
 ---
 -->
 # The AI Model Starter Kit
 
-The fastest way to get started with building apps using **any AI model**.
+The fastest way to call a selected Microsoft Foundry model deployment from your application.
 
-Call **any Foundry models** — GPT, DeepSeek, Grok, Llama, and more — using **stable OpenAI SDKs** and the **GA OpenAI Responses API**. Production grade, enterprise friendly and secure with **EntraID keyless authentication** — no API keys, and zero secrets to manage.
+Use a **standard OpenAI SDK**, the **Responses API**, and **EntraID keyless authentication** — no API keys or secrets to manage. The normal path deploys one model and every language quickstart makes one request to its deployment alias.
 
-Includes working examples in **Python, TypeScript, C#, Java, and Go**.
+Includes working quickstarts in **Python, TypeScript, C#, Java, and Go**. Python also includes explicitly selected examples for streaming, local function calls, structured output, reasoning, prompt caching, image input, and stored conversation state.
 
 ![Architecture: Standard OpenAI SDKs in 5 languages connect to any Foundry model via the GA Responses API with keyless auth](images/ai-model-start-arch.png)
 
@@ -50,7 +50,7 @@ Includes working examples in **Python, TypeScript, C#, Java, and Go**.
 - [Azure Subscription](https://azure.microsoft.com/pricing/purchase-options/azure-account)
 - [Azure Developer CLI](https://learn.microsoft.com/azure/developer/azure-developer-cli/install-azd)
 - [Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli)
-- One or more of: Python 3.9+, Node.js 18+, .NET 8+, Java 21+, Go 1.23+
+- One or more of: Python 3.10+, Node.js 18+, .NET 8+, Java 21+, Go 1.23+
 
 ## Quick Start
 
@@ -59,17 +59,17 @@ Includes working examples in **Python, TypeScript, C#, Java, and Go**.
 az login
 azd auth login
 
-# 2. Deploy DeepSeek-R1-0528, gpt-4.1-mini, and gpt-oss-120b to Microsoft Foundry
+# 2. Deploy one model (DeepSeek-R1-0528 by default) to Microsoft Foundry
 azd up
 ```
 
-That's it! You now have a Microsoft Foundry account with both models deployed and ready to use.
+That's it! You now have a Microsoft Foundry account, project, and one model deployment ready to use.
 
 ## Next Steps
 
 ### Set up your environment
 
-After `azd up`, a `.env` file is automatically created in the project root with all required environment variables. The `Cognitive Services User` role is also automatically assigned to the deploying user during provisioning. Source the `.env` file before running examples:
+After `azd up`, the project root `.env` is updated with the endpoint and primary deployment alias. Other comments and user-managed variables in the file are preserved. The `Cognitive Services User` role is also automatically assigned to the deploying user during provisioning. Source the `.env` file before running examples:
 
 **Bash / macOS / Linux**
 ```bash
@@ -85,7 +85,7 @@ Get-Content .env | ForEach-Object { if ($_ -match '^([^#=]+)=(.*)$') { [Environm
 
 ### Run an example
 
-Each example calls both an **OpenAI model** (gpt-4.1-mini) and a **non-OpenAI reasoning model** (DeepSeek-R1-0528) using the Responses API. When the model emits structured reasoning items, each example prints the model's reasoning summary alongside the final answer — using the same in-schema shape (`output[].type == "reasoning"` with `summary[].text`) regardless of model family.
+Each language quickstart reads `AZURE_MODEL_DEPLOYMENT_NAME` and makes exactly one request. Deployment aliases are passed through unchanged; the examples do not infer a provider or model family from the alias.
 
 **Python**
 ```bash
@@ -93,6 +93,26 @@ cd src/python
 pip install -r requirements.txt
 python responses_example.py
 ```
+
+The default command runs only the basic example. Select a Python feature explicitly:
+
+```bash
+python responses_example.py --example streaming
+python responses_example.py --example function-call
+python responses_example.py --example parallel-functions --max-concurrency 4
+python responses_example.py --example structured-output
+python responses_example.py --example reasoning --reasoning-effort high
+python responses_example.py --example prompt-caching
+python responses_example.py --example image-input --image path/to/local-image.png
+python responses_example.py --example conversation-state
+
+# Call another deployment alias without changing the environment
+python responses_example.py --model my-deployment-alias
+```
+
+Some explicitly selected features require a follow-up request by design: function calling submits local tool output, prompt caching checks a second request for a cache hit, and conversation state sends a second turn. See [Responses API feature guidance](docs/responses-api-features.md) for exact request shapes and success signals.
+
+The Python CLI defaults `--max-output-tokens` to `4096`. This limit includes visible output and reasoning tokens; an explicit lower value is preserved, and incomplete responses remain visible errors.
 
 **TypeScript**
 ```bash
@@ -125,11 +145,13 @@ All five examples follow the same pattern:
 
 1. **Get an EntraID token** via `DefaultAzureCredential` (scoped to `https://ai.azure.com/.default`)
 2. **Create a standard OpenAI client** with `base_url` = project endpoint + `/openai/v1`
-3. **Call the Responses API** — works with any deployed model
+3. **Call the Responses API** once with the selected deployment alias
 
 **Why the standard OpenAI SDK?**
 
-The Foundry endpoint is OpenAI-compatible. By appending `/openai/v1`, you can use the standard `openai` library in any language — no `azure-ai-projects`, `AzureOpenAI`, or `Azure.AI.OpenAI` wrapper needed. No `api-version` query parameter is required. This works for all model providers (OpenAI, DeepSeek, Meta, xAI, Microsoft, and more).
+The Foundry endpoint is OpenAI-compatible. By appending `/openai/v1`, you can use the standard `openai` library in any language — no `azure-ai-projects`, `AzureOpenAI`, or `Azure.AI.OpenAI` wrapper needed. No `api-version` query parameter is required.
+
+> **Feature compatibility:** A common SDK and API shape does not mean every deployment supports every optional Responses feature. Unsupported parameters remain visible API errors; the examples do not remove parameters, switch APIs, or retry with a weaker request.
 
 ### Python code sample
 
@@ -140,26 +162,29 @@ from openai import OpenAI
 
 credential = DefaultAzureCredential()
 endpoint = os.environ["AZURE_AI_PROJECT_ENDPOINT"]
+model = os.environ.get("AZURE_MODEL_DEPLOYMENT_NAME", "DeepSeek-R1-0528")
 client = OpenAI(
     base_url=endpoint.rstrip("/") + "/openai/v1",
     api_key=get_bearer_token_provider(credential, "https://ai.azure.com/.default"),
+    max_retries=0,
 )
 
-# Works with any Foundry model — OpenAI, DeepSeek, etc.
 response = client.responses.create(
-    model="gpt-4.1-mini",  # or "DeepSeek-R1-0528"
+    model=model,
     input="Explain quantum computing in simple terms",
-    max_output_tokens=1000,
+    max_output_tokens=500,
 )
 print(response.output_text)
 ```
 
 ## What This Template Includes
 
-- **Core Infrastructure**: Microsoft Foundry account + project with three model deployments
+- **Core Infrastructure**: Microsoft Foundry account + project with one primary model deployment
+- **Optional Deployments**: Secondary and third deployment slots remain available but are empty by default
 - **Optimal Configuration**: GlobalStandard SKU, flexible region and model selection
 - **Secure Authentication**: EntraID (keyless) via `DefaultAzureCredential` — no API keys or secrets to manage
-- **Multi-language examples**: Python, TypeScript, C#, Java, and Go — all using their standard OpenAI SDK
+- **Multi-language quickstarts**: Python, TypeScript, C#, Java, and Go — one request each
+- **Python feature examples**: Explicitly selected Responses API examples with offline tests
 - **Complete Documentation**: Setup guide with troubleshooting tips
 
 ## What You Get
@@ -185,8 +210,13 @@ print(response.output_text)
 │   └── requirements.txt       # Dependencies for scripts (control plane)
 ├── src/
 │   ├── python/
-│   │   ├── responses_example.py         # Python example
-│   │   └── requirements.txt
+│   │   ├── responses_example.py         # Python CLI (basic by default)
+│   │   ├── responses_common.py          # Auth, client, completion, and usage helpers
+│   │   ├── responses_features.py        # Explicit Responses feature examples
+│   │   ├── responses_weather.py         # Validated local tool fixture
+│   │   ├── tests/                       # Offline SDK + mock transport tests
+│   │   ├── requirements.txt
+│   │   └── requirements-dev.txt
 │   ├── typescript/
 │   │   ├── responses_example.ts         # TypeScript example
 │   │   ├── package.json
@@ -200,6 +230,8 @@ print(response.output_text)
 │   └── go/
 │       ├── main.go                      # Go example
 │       └── go.mod
+├── docs/
+│   └── responses-api-features.md
 └── README.md
 ```
 
@@ -213,9 +245,11 @@ print(response.output_text)
 | Java | `com.openai:openai-java` | `com.azure:azure-identity` |
 | Go | `github.com/openai/openai-go` | `github.com/Azure/azure-sdk-for-go/sdk/azidentity` |
 
+The Python feature examples also use Pydantic for strict schemas/local validation and `python-dotenv` for local environment loading.
+
 ## Configuration
 
-Model deployments are defined in Bicep and created automatically during `azd up`. Configure models via `azd env set` before running `azd up`:
+The primary model deployment is defined in Bicep and created during `azd up`. Secondary and third deployments are opt-in. Configure deployment tuples via `azd env set` before running `azd up`:
 
 | Variable | Default | Description |
 |---|---|---|
@@ -225,13 +259,13 @@ Model deployments are defined in Bicep and created automatically during `azd up`
 | `AZURE_MODEL_DEPLOYMENT_NAME` | Same as model name | Custom deployment name for primary model |
 | `AZURE_MODEL_SKU_NAME` | `GlobalStandard` | Primary model SKU tier |
 | `AZURE_MODEL_SKU_CAPACITY` | `10` | Primary model capacity (tokens-per-minute in thousands) |
-| `AZURE_MODEL_2_NAME` | `gpt-4.1-mini` | Second model to deploy (empty string to skip) |
+| `AZURE_MODEL_2_NAME` | Empty | Second model to deploy (empty string skips it) |
 | `AZURE_MODEL_2_FORMAT` | `OpenAI` | Second model format |
 | `AZURE_MODEL_2_VERSION` | `2025-04-14` | Second model version |
 | `AZURE_MODEL_2_DEPLOYMENT_NAME` | Same as model name | Custom deployment name for second model |
 | `AZURE_MODEL_2_SKU_NAME` | `GlobalStandard` | Second model SKU tier |
 | `AZURE_MODEL_2_SKU_CAPACITY` | `10` | Second model capacity |
-| `AZURE_MODEL_3_NAME` | `gpt-oss-120b` | Third model to deploy (empty string to skip) |
+| `AZURE_MODEL_3_NAME` | Empty | Third model to deploy (empty string skips it) |
 | `AZURE_MODEL_3_FORMAT` | `OpenAI-OSS` | Third model format |
 | `AZURE_MODEL_3_VERSION` | `1` | Third model version |
 | `AZURE_MODEL_3_DEPLOYMENT_NAME` | Same as model name | Custom deployment name for third model |
@@ -250,6 +284,15 @@ azd up
 azd env set AZURE_MODEL_NAME "gpt-4.1-mini"
 azd env set AZURE_MODEL_FORMAT "OpenAI"
 azd env set AZURE_MODEL_VERSION "2025-04-14"
+azd up
+```
+
+### Opt in to a secondary deployment
+
+```bash
+azd env set AZURE_MODEL_2_NAME "gpt-4.1-mini"
+azd env set AZURE_MODEL_2_FORMAT "OpenAI"
+azd env set AZURE_MODEL_2_VERSION "2025-04-14"
 azd up
 ```
 
@@ -272,8 +315,8 @@ After `azd up`, available via `azd env get-values`:
 | `AZURE_AI_PROJECT_NAME` | Foundry project name |
 | `AZURE_AI_PROJECT_ENDPOINT` | Project endpoint URL (use as `base_url` with `/openai/v1` suffix) |
 | `AZURE_MODEL_DEPLOYMENT_NAME` | Primary model deployment name |
-| `AZURE_MODEL_2_DEPLOYMENT_NAME` | Second model deployment name |
-| `AZURE_MODEL_3_DEPLOYMENT_NAME` | Third model deployment name |
+| `AZURE_MODEL_2_DEPLOYMENT_NAME` | Optional second deployment name (empty when skipped) |
+| `AZURE_MODEL_3_DEPLOYMENT_NAME` | Optional third deployment name (empty when skipped) |
 
 ## Common Commands
 

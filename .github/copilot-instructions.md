@@ -2,10 +2,10 @@
 
 ## Architecture
 
-This is an **Azure Developer CLI (azd) template** that deploys a Microsoft Foundry account with three models (DeepSeek-R1-0528, gpt-4.1-mini, and gpt-oss-120b by default) and provides working examples in **Python, TypeScript, C#, Java, and Go** to call them.
+This is an **Azure Developer CLI (azd) template** that deploys a Microsoft Foundry account with one primary model (DeepSeek-R1-0528 by default) and provides working examples in **Python, TypeScript, C#, Java, and Go**. Secondary and third deployments are opt-in.
 
 - **Infra layer** (`infra/`): Subscription-scoped Bicep. [main.bicep](../infra/main.bicep) creates the resource group and delegates to [foundry.bicep](../infra/foundry.bicep), which provisions `Microsoft.CognitiveServices/accounts` (kind `AIServices`), a project sub-resource, and model deployments (primary + optional secondary + optional third).
-- **App layer** (`src/`): One self-contained example per language, each using the **Responses API** with that language's standard **OpenAI SDK** (not Azure-specific SDK wrappers). There is no web app, API server, or deployment target — only local scripts.
+- **App layer** (`src/`): Each language has a one-request **Responses API** quickstart using its standard **OpenAI SDK** (not Azure-specific SDK wrappers). Python is the canonical feature implementation with an explicit `--example` CLI and small local modules. There is no web app, API server, or deployment target.
 - **Glue**: [azure.yaml](../azure.yaml) wires azd to the Bicep infra. Environment variables flow from Bicep outputs → azd env → app code via `os.environ` (or equivalent).
 
 ## Key Conventions
@@ -33,7 +33,8 @@ client = OpenAI(
     base_url=endpoint.rstrip("/") + "/openai/v1",
     api_key=get_bearer_token_provider(credential, "https://ai.azure.com/.default"),
 )
-response = client.responses.create(model="gpt-4.1-mini", input="...", max_output_tokens=500)
+model = os.environ.get("AZURE_MODEL_DEPLOYMENT_NAME", "DeepSeek-R1-0528")
+response = client.responses.create(model=model, input="...", max_output_tokens=500)
 ```
 
 ### TypeScript SDK pattern
@@ -49,7 +50,8 @@ const client = new OpenAI({
   baseURL: process.env.AZURE_AI_PROJECT_ENDPOINT!.replace(/\/+$/, "") + "/openai/v1",
   apiKey: token.token,
 });
-const response = await client.responses.create({ model: "gpt-4.1-mini", input: "...", max_output_tokens: 500 });
+const model = process.env.AZURE_MODEL_DEPLOYMENT_NAME ?? "DeepSeek-R1-0528";
+const response = await client.responses.create({ model, input: "...", max_output_tokens: 500 });
 ```
 
 ### C# SDK pattern
@@ -61,7 +63,8 @@ var token = credential.GetToken(new TokenRequestContext(["https://ai.azure.com/.
 var client = new OpenAIClient(
     new ApiKeyCredential(token.Token),
     new OpenAIClientOptions { Endpoint = new Uri(endpoint.TrimEnd('/') + "/openai/v1") });
-var responsesClient = client.GetResponsesClient("gpt-4.1-mini");
+var model = Environment.GetEnvironmentVariable("AZURE_MODEL_DEPLOYMENT_NAME") ?? "DeepSeek-R1-0528";
+var responsesClient = client.GetResponsesClient(model);
 var response = await responsesClient.CreateResponseAsync(new CreateResponseOptions(
     [ResponseItem.CreateUserMessageItem("...")])
     { MaxOutputTokenCount = 500 }
@@ -105,18 +108,18 @@ Use **keyless** via `DefaultAzureCredential` (EntraID). Users need the `Cognitiv
 ### Environment variables
 Set from `azd env get-values` after provisioning:
 - `AZURE_AI_PROJECT_ENDPOINT` — the project endpoint; used as `base_url` with `/openai/v1` suffix
-- `AZURE_MODEL_DEPLOYMENT_NAME` — primary model deployment name (default: `DeepSeek-R1-0528`); read by samples for example 2
-- `AZURE_MODEL_2_DEPLOYMENT_NAME` — second model deployment name (default: `gpt-4.1-mini`); read by all samples for example 1
-- `AZURE_MODEL_3_DEPLOYMENT_NAME` — third model deployment name (default: `gpt-oss-120b`)
+- `AZURE_MODEL_DEPLOYMENT_NAME` — primary model deployment alias (default: `DeepSeek-R1-0528`); read by every quickstart
+- `AZURE_MODEL_2_DEPLOYMENT_NAME` — optional second deployment alias; empty when skipped
+- `AZURE_MODEL_3_DEPLOYMENT_NAME` — optional third deployment alias; empty when skipped
 
-Sample code reads model names from `AZURE_MODEL_DEPLOYMENT_NAME`, `AZURE_MODEL_2_DEPLOYMENT_NAME`, and `AZURE_MODEL_3_DEPLOYMENT_NAME` env vars, falling back to `DeepSeek-R1-0528`, `gpt-4.1-mini`, and `gpt-oss-120b` respectively if not set.
+Normal sample code reads only `AZURE_MODEL_DEPLOYMENT_NAME`, falling back to `DeepSeek-R1-0528`. Treat deployment aliases as opaque: do not infer providers or capabilities from their values.
 
 ### Bicep conventions
 - Target scope is `subscription` in `main.bicep`; resource-group-scoped resources go in `foundry.bicep` module.
 - API version: `2025-06-01` for all `Microsoft.CognitiveServices` resources.
 - Resource naming uses `uniqueString(subscription().id, environmentName, location)` for uniqueness.
 - **Model deployments are in Bicep** — defined in `foundry.bicep` as `Microsoft.CognitiveServices/accounts/deployments` resources with `@2025-06-01` API version. Primary deployment is unconditional; secondary and third use `if (!empty(modelNName))` conditional.
-- The second and third model deployments are optional — set `AZURE_MODEL_2_NAME` or `AZURE_MODEL_3_NAME` to empty string to skip them.
+- The second and third model deployments are optional and empty by default. Set `AZURE_MODEL_2_NAME` or `AZURE_MODEL_3_NAME` to opt in.
 
 ## Developer Workflow
 
@@ -135,6 +138,8 @@ $env:AZURE_AI_PROJECT_ENDPOINT = azd env get-value 'AZURE_AI_PROJECT_ENDPOINT'
 
 # Run any example
 cd src/python   && pip install -r requirements.txt && python responses_example.py
+# Explicit Python feature example:
+python responses_example.py --example structured-output
 cd src/typescript && npm install && npx tsx responses_example.ts
 cd src/csharp   && dotnet run
 cd src/java     && mvn -q compile exec:java
@@ -151,10 +156,12 @@ azd down --purge
 - Follow the universal pattern: get EntraID token (audience `https://ai.azure.com/.default`), create standard OpenAI client with `base_url` = project endpoint + `/openai/v1`, call the Responses API.
 - Use the `responses` API, not `chat.completions`.
 - Do not add Azure-specific OpenAI wrappers (`azure-ai-projects`, `AzureOpenAI`, `Azure.AI.OpenAI`, etc.).
-- Keep scripts self-contained (no shared utility modules exist).
+- Keep non-Python quickstarts self-contained. Python features share `responses_common.py` and `responses_weather.py`.
+- The default invocation must call only `AZURE_MODEL_DEPLOYMENT_NAME` once. Advanced Python examples may make documented follow-up requests only when explicitly selected.
+- Do not inspect deployment aliases, remove unsupported parameters, switch APIs, or retry with a weaker request.
 
 ### Language-specific notes
-- **Python**: Dependencies go in `src/python/requirements.txt`. Only `openai` + `azure-identity`.
+- **Python**: Runtime dependencies go in `src/python/requirements.txt`; offline test/lint/type dependencies go in `requirements-dev.txt`. Use Pydantic for shared tool/structured-output validation.
 - **TypeScript**: Dependencies go in `src/typescript/package.json`. Only `openai` + `@azure/identity`.
 - **C#**: NuGet packages in `src/csharp/*.csproj`. Use `OpenAI` (≥2.8.0) + `Azure.Identity`. Suppress `OPENAI001` warning for experimental Responses API. Key types: `ResponsesClient` (via `client.GetResponsesClient(model)`), `CreateResponseOptions` (with `InputItems` for input and `MaxOutputTokenCount`), `ResponseResult` (with `GetOutputText()`).
 - **Java**: Maven dependencies in `src/java/pom.xml`. Use `com.openai:openai-java` + `com.azure:azure-identity`. Use `/openai/v1` base URL (no `api-version` needed — the SDK manages versioning internally). Must manually iterate output items (no `outputText()` convenience).
