@@ -9,7 +9,7 @@
       "value": "${AZURE_LOCATION}"
     },
     "modelName": {
-      "value": "${AZURE_MODEL_NAME=DeepSeek-R1-0528}"
+      "value": "${AZURE_MODEL_NAME=DeepSeek-V3.2}"
     },
     "modelFormat": {
       "value": "${AZURE_MODEL_FORMAT=DeepSeek}"
@@ -46,6 +46,9 @@
     },
     "principalId": {
       "value": "${AZURE_PRINCIPAL_ID}"
+    },
+    "createRoleAssignments": {
+      "value": "${AZURE_CREATE_ROLE_ASSIGNMENTS=false}"
     }
   }
 }

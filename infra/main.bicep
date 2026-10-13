@@ -45,8 +45,8 @@ param resourceGroupName string = ''
 
 // ── Primary model deployment parameters ─────
 
-@description('Name of the primary model to deploy (e.g., "DeepSeek-R1-0528", "Phi-4", "MAI-DS-R1").')
-param modelName string = 'DeepSeek-R1-0528'
+@description('Name of the primary model to deploy (e.g., "DeepSeek-V3.2", "Phi-4", "MAI-DS-R1").')
+param modelName string = 'DeepSeek-V3.2'
 
 @description('Format of the primary model (e.g., "DeepSeek", "Microsoft", "OpenAI").')
 param modelFormat string = 'DeepSeek'
@@ -108,6 +108,9 @@ param deployment3SkuCapacity int = 10
 @description('Principal ID of the deploying user. azd populates this automatically.')
 param principalId string = ''
 
+@description('Create Foundry User role assignments for the deploying user and project identity. Requires role assignment write permission.')
+param createRoleAssignments bool = false
+
 // ── Tags ─────────────────────────────────────
 
 param tags object = {}
@@ -165,6 +168,7 @@ module foundry 'foundry.bicep' = {
     deployment3SkuName: deployment3SkuName
     deployment3SkuCapacity: deployment3SkuCapacity
     principalId: principalId
+    createRoleAssignments: createRoleAssignments
   }
 }
 
@@ -176,7 +180,8 @@ output AZURE_RESOURCE_GROUP string = rg.name
 output AZURE_AI_FOUNDRY_NAME string = foundry.outputs.aiFoundryName
 output AZURE_AI_FOUNDRY_ENDPOINT string = foundry.outputs.aiFoundryEndpoint
 output AZURE_AI_PROJECT_NAME string = foundry.outputs.aiProjectName
-output AZURE_AI_PROJECT_ENDPOINT string = '${foundry.outputs.aiFoundryEndpoint}api/projects/${foundry.outputs.aiProjectName}'
+output AZURE_AI_PROJECT_ENDPOINT string = foundry.outputs.aiProjectEndpoint
 output AZURE_MODEL_DEPLOYMENT_NAME string = effectiveDeploymentName
+output AZURE_PRIMARY_MODEL_DEPLOYMENT_NAME string = effectiveDeploymentName
 output AZURE_MODEL_2_DEPLOYMENT_NAME string = effectiveDeployment2Name
 output AZURE_MODEL_3_DEPLOYMENT_NAME string = effectiveDeployment3Name

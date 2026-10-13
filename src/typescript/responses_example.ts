@@ -24,7 +24,7 @@ async function main() {
   }
 
   const model =
-    process.env.AZURE_MODEL_DEPLOYMENT_NAME ?? "DeepSeek-R1-0528";
+    process.env.AZURE_MODEL_DEPLOYMENT_NAME ?? "DeepSeek-V3.2";
   const baseURL = endpoint.replace(/\/+$/, "") + "/openai/v1";
   const token = await getToken();
 

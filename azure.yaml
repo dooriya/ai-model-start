@@ -13,24 +13,33 @@ hooks:
         Write-Host "Updating managed values in .env..."
         $projectDir = if ($env:PROJECT_DIR) { $env:PROJECT_DIR } else { Get-Location }
         $envFile = Join-Path $projectDir ".env"
+        $endpoint = (azd env get-value AZURE_AI_PROJECT_ENDPOINT).Trim()
+        if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($endpoint)) {
+          throw "AZURE_AI_PROJECT_ENDPOINT is blank after provisioning."
+        }
+        $model = (azd env get-value AZURE_PRIMARY_MODEL_DEPLOYMENT_NAME).Trim()
+        if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($model)) {
+          throw "AZURE_PRIMARY_MODEL_DEPLOYMENT_NAME is blank after provisioning."
+        }
         $managed = [ordered]@{
-          AZURE_AI_PROJECT_ENDPOINT = azd env get-value AZURE_AI_PROJECT_ENDPOINT
-          AZURE_MODEL_DEPLOYMENT_NAME = azd env get-value AZURE_MODEL_DEPLOYMENT_NAME
+          AZURE_AI_PROJECT_ENDPOINT = $endpoint
+          AZURE_MODEL_DEPLOYMENT_NAME = $model
         }
         $lines = if (Test-Path $envFile) { @(Get-Content -Path $envFile) } else { @() }
         $seen = @{}
-        $updated = foreach ($line in $lines) {
+        $updated = @()
+        foreach ($line in $lines) {
           if ($line -match '^([A-Za-z_][A-Za-z0-9_]*)=') {
             $key = $matches[1]
             if ($managed.Contains($key)) {
               if (-not $seen.ContainsKey($key)) {
                 $seen[$key] = $true
-                "$key=$($managed[$key])"
+                $updated += "$key=$($managed[$key])"
               }
               continue
             }
           }
-          $line
+          $updated += $line
         }
         foreach ($key in $managed.Keys) {
           if (-not $seen.ContainsKey($key)) {
@@ -49,7 +58,15 @@ hooks:
         echo "Updating managed values in .env..."
         envFile="${PROJECT_DIR:-.}/.env"
         endpoint="$(azd env get-value AZURE_AI_PROJECT_ENDPOINT)"
-        model="$(azd env get-value AZURE_MODEL_DEPLOYMENT_NAME)"
+        if [ -z "$endpoint" ]; then
+          echo "AZURE_AI_PROJECT_ENDPOINT is blank after provisioning." >&2
+          exit 1
+        fi
+        model="$(azd env get-value AZURE_PRIMARY_MODEL_DEPLOYMENT_NAME)"
+        if [ -z "$model" ]; then
+          echo "AZURE_PRIMARY_MODEL_DEPLOYMENT_NAME is blank after provisioning." >&2
+          exit 1
+        fi
         touch "$envFile"
         tmpFile="$(mktemp "${envFile}.XXXXXX")"
         awk -v endpoint="$endpoint" -v model="$model" '

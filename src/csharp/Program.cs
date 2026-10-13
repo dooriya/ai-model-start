@@ -23,7 +23,7 @@ var client = new OpenAIClient(
     new ApiKeyCredential(token.Token),
     new OpenAIClientOptions { Endpoint = new Uri(baseUrl) });
 
-var model = Environment.GetEnvironmentVariable("AZURE_MODEL_DEPLOYMENT_NAME") ?? "DeepSeek-R1-0528";
+var model = Environment.GetEnvironmentVariable("AZURE_MODEL_DEPLOYMENT_NAME") ?? "DeepSeek-V3.2";
 var responsesClient = client.GetResponsesClient(model);
 var result = await responsesClient.CreateResponseAsync(new CreateResponseOptions(
     [ResponseItem.CreateUserMessageItem("Explain quantum computing in three sentences.")])

@@ -45,7 +45,7 @@ public class ResponsesExample {
 
         String model = System.getenv().getOrDefault(
                 "AZURE_MODEL_DEPLOYMENT_NAME",
-                "DeepSeek-R1-0528"
+                "DeepSeek-V3.2"
         );
         var response = client.responses().create(
                 ResponseCreateParams.builder()

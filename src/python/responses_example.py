@@ -54,8 +54,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--model",
         help=(
-            "Deployment alias to call. Defaults to AZURE_MODEL_DEPLOYMENT_NAME, "
-            "then DeepSeek-R1-0528."
+            "Deployment alias to call. Defaults to AZURE_MODEL_DEPLOYMENT_NAME, then DeepSeek-V3.2."
         ),
     )
     parser.add_argument("--prompt", default=DEFAULT_PROMPT, help="Prompt for basic/streaming.")

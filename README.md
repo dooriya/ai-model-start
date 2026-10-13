@@ -59,7 +59,7 @@ Includes working quickstarts in **Python, TypeScript, C#, Java, and Go**. Python
 az login
 azd auth login
 
-# 2. Deploy one model (DeepSeek-R1-0528 by default) to Microsoft Foundry
+# 2. Deploy one model (DeepSeek-V3.2 by default) to Microsoft Foundry
 azd up
 ```
 
@@ -69,7 +69,7 @@ That's it! You now have a Microsoft Foundry account, project, and one model depl
 
 ### Set up your environment
 
-After `azd up`, the project root `.env` is updated with the endpoint and primary deployment alias. Other comments and user-managed variables in the file are preserved. The `Cognitive Services User` role is also automatically assigned to the deploying user during provisioning. Source the `.env` file before running examples:
+After `azd up`, the project root `.env` is updated with the Foundry project endpoint and primary deployment alias. The hook fails instead of writing incomplete configuration when either output is blank, preserves unrelated lines, removes duplicate managed keys, and avoids rewriting an unchanged file. Role assignments are disabled by default, so the deployment reuses permissions already granted to the deploying user and project identity. Source the `.env` file before running examples:
 
 **Bash / macOS / Linux**
 ```bash
@@ -81,7 +81,7 @@ set -a; source .env; set +a
 Get-Content .env | ForEach-Object { if ($_ -match '^([^#=]+)=(.*)$') { [Environment]::SetEnvironmentVariable($matches[1], $matches[2]) } }
 ```
 
-> **Note:** Role assignments can take up to 5 minutes to propagate. If you see 401/403 errors right after `azd up`, wait a few minutes and retry.
+> **Note:** If an authorized administrator opts in to role creation, role assignments can take up to 5 minutes to propagate.
 
 ### Run an example
 
@@ -162,7 +162,7 @@ from openai import OpenAI
 
 credential = DefaultAzureCredential()
 endpoint = os.environ["AZURE_AI_PROJECT_ENDPOINT"]
-model = os.environ.get("AZURE_MODEL_DEPLOYMENT_NAME", "DeepSeek-R1-0528")
+model = os.environ.get("AZURE_MODEL_DEPLOYMENT_NAME", "DeepSeek-V3.2")
 client = OpenAI(
     base_url=endpoint.rstrip("/") + "/openai/v1",
     api_key=get_bearer_token_provider(credential, "https://ai.azure.com/.default"),
@@ -189,7 +189,7 @@ print(response.output_text)
 
 ## What You Get
 
-- **DeepSeek-R1-0528** (default) — High-quality reasoning model, no registration required
+- **DeepSeek-V3.2** (default) — Non-OpenAI model for efficient reasoning and agentic workloads
 - **Flexible model deployment** — Deploy any Foundry model (OpenAI, DeepSeek, Meta, xAI, Microsoft, and more)
 - **Microsoft Foundry project** — Full project workspace for your development team
 - **Standard OpenAI SDKs** — Use each language's `openai` library directly, no Azure-specific wrappers
@@ -253,7 +253,7 @@ The primary model deployment is defined in Bicep and created during `azd up`. Se
 
 | Variable | Default | Description |
 |---|---|---|
-| `AZURE_MODEL_NAME` | `DeepSeek-R1-0528` | Primary model to deploy |
+| `AZURE_MODEL_NAME` | `DeepSeek-V3.2` | Primary model to deploy |
 | `AZURE_MODEL_FORMAT` | `DeepSeek` | Primary model format (`DeepSeek`, `Microsoft`, `OpenAI`, etc.) |
 | `AZURE_MODEL_VERSION` | `1` | Primary model version |
 | `AZURE_MODEL_DEPLOYMENT_NAME` | Same as model name | Custom deployment name for primary model |
@@ -271,8 +271,20 @@ The primary model deployment is defined in Bicep and created during `azd up`. Se
 | `AZURE_MODEL_3_DEPLOYMENT_NAME` | Same as model name | Custom deployment name for third model |
 | `AZURE_MODEL_3_SKU_NAME` | `GlobalStandard` | Third model SKU tier |
 | `AZURE_MODEL_3_SKU_CAPACITY` | `10` | Third model capacity |
+| `AZURE_CREATE_ROLE_ASSIGNMENTS` | `false` | Create account-scoped Foundry User assignments for the deploying user and project identity. Requires `Microsoft.Authorization/roleAssignments/write`. |
 
-### Example: DeepSeek-R1-0528 (Default)
+### Optional: create Foundry role assignments
+
+By default, `azd up` creates no role assignments and relies on existing inherited access. If the deploying user and project identity need account-scoped access, an authorized administrator can opt in:
+
+```bash
+azd env set AZURE_CREATE_ROLE_ASSIGNMENTS true
+azd up
+```
+
+This creates the **Foundry User** role for the deploying user and the Foundry project's system-assigned identity at the new Foundry account scope. The caller running `azd up` must be allowed to perform `Microsoft.Authorization/roleAssignments/write`.
+
+### Example: DeepSeek-V3.2 (Default)
 
 ```bash
 azd up
@@ -375,17 +387,16 @@ python list_models_with_responses_api_support.py --non-openai --locations
 | ~~[Preview API version required](https://github.com/Azure-Samples/ai-model-start/issues/2)~~ | ~~`/openai/v1` endpoint previously only accepted `api-version=2025-11-15-preview`.~~ | **Resolved** — The `/openai/v1` path is now GA and doesn't require an `api-version` parameter at all. |
 | ~~[Java SDK `putQueryParam` bug](https://github.com/Azure-Samples/ai-model-start/issues/3)~~ | ~~`openai-java` `putQueryParam("api-version", ...)` silently drops the query parameter, causing `400: API version not supported` errors with EntraID auth.~~ | **Resolved** — All examples now use `/openai/v1` base URL which doesn't need `api-version`. |
 | [API key endpoint limitation](https://github.com/Azure-Samples/ai-model-start/issues/5) | The account-level API key endpoint (`/openai/v1`) does not support the Responses API for non-OpenAI models. | This template uses **EntraID authentication** with the project endpoint, which supports all models. |
-| [DeepSeek-R1-0528 reasoning summary](https://github.com/Azure-Samples/ai-model-start/issues/12) | The `reasoning` output item is emitted on roughly half of identical-prompt requests, and `usage.output_tokens_details.reasoning_tokens` reports `0` even when summary text is present. | Templates handle the missing-item case gracefully (no `Reasoning summary:` block when absent). Treat DeepSeek reasoning tokens as opaque cost. |
 | [o4-mini reasoning summary text](https://github.com/Azure-Samples/ai-model-start/issues/13) | Setting `reasoning={"summary":"auto"\|"concise"\|"detailed"}` returns HTTP 400 with an upstream OpenAI organization-verification error. Without that parameter, the `reasoning` item is emitted but `summary[].text` is empty. | Use `reasoning={"effort":"low"\|"medium"\|"high"}` to control reasoning compute — this is accepted without verification and `reasoning_tokens` reflects the chosen effort. Recovering human-readable summary text requires OpenAI org verification, which Foundry customers may not have access to. |
 
 ## Troubleshooting
 
-**401 / 403 "Permission denied"** — The `Cognitive Services User` role is assigned automatically during `azd up`. If you still see this error, role assignments can take up to 5 minutes to propagate — wait and retry. If another user needs access, assign the role manually:
+**401 / 403 "Permission denied"** — Role assignments are off by default. Confirm that the caller already has the **Foundry User** role at the Foundry account scope, or ask an authorized administrator to opt in before provisioning:
 ```bash
-az role assignment create --role "Cognitive Services User" \
-  --assignee <user-object-id> \
-  --scope "/subscriptions/<sub-id>/resourceGroups/<rg-name>/providers/Microsoft.CognitiveServices/accounts/<foundry-name>"
+azd env set AZURE_CREATE_ROLE_ASSIGNMENTS true
+azd up
 ```
+The opt-in path assigns Foundry User to both the deploying user and project identity and requires `Microsoft.Authorization/roleAssignments/write`. Allow time for newly created assignments to propagate before invoking a model.
 
 **"DeploymentModelNotSupported" during `azd up`** — Ensure the model format matches the model name (e.g., `DeepSeek` format for DeepSeek models, `OpenAI` for GPT models). Check available models with `az cognitiveservices model list -l <location> --query "[?model.format=='YourFormat']"`. See `scripts/list_models_with_responses_api_support.py` for discovery.
 
@@ -461,7 +472,6 @@ All models currently available on Microsoft Foundry that support the [Responses 
 
 | Model | Version(s) | Availability |
 |---|---|---|
-| DeepSeek-R1-0528 | 1 | All except southeastasia |
 | DeepSeek-V3-0324 | 1 | All except southeastasia |
 | DeepSeek-V3.1 | 1 | All except southeastasia |
 | DeepSeek-V3.2 | 1 | All except southeastasia |

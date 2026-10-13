@@ -47,7 +47,7 @@ func main() {
 
 	model := os.Getenv("AZURE_MODEL_DEPLOYMENT_NAME")
 	if model == "" {
-		model = "DeepSeek-R1-0528"
+		model = "DeepSeek-V3.2"
 	}
 	resp, err := client.Responses.New(ctx, responses.ResponseNewParams{
 		Model: model,

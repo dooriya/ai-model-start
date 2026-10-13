@@ -13,7 +13,7 @@ from openai import OpenAI
 from openai.types.responses import Response
 
 TOKEN_SCOPE = "https://ai.azure.com/.default"
-DEFAULT_MODEL = "DeepSeek-R1-0528"
+DEFAULT_MODEL = "DeepSeek-V3.2"
 
 
 class ExampleError(RuntimeError):

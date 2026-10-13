@@ -185,19 +185,32 @@ resource model3Deployment 'Microsoft.CognitiveServices/accounts/deployments@2025
 
 // ── Identity / RBAC ──────────────────────────
 
-@description('Principal ID of the deploying user. If provided, assigns Cognitive Services User role.')
+@description('Principal ID of the deploying user.')
 param principalId string = ''
 
-// Cognitive Services User — grants full data-plane access including Responses API
-var cognitiveServicesUserRoleId = 'a97b65f3-24c7-4388-baec-2e87135dc908'
+@description('Create Foundry User role assignments for the deploying user and project identity. Requires role assignment write permission.')
+param createRoleAssignments bool = false
 
-resource roleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(principalId)) {
-  name: guid(aiFoundry.id, principalId, cognitiveServicesUserRoleId)
+// Foundry User — keyless data-plane access for Foundry projects and models
+var foundryUserRoleId = '53ca6127-db72-4b80-b1b0-d745d6d5456d'
+
+resource deployingUserRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (createRoleAssignments && !empty(principalId)) {
+  name: guid(aiFoundry.id, 'deploying-user', principalId, foundryUserRoleId)
   scope: aiFoundry
   properties: {
     principalId: principalId
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', cognitiveServicesUserRoleId)
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', foundryUserRoleId)
     principalType: 'User'
+  }
+}
+
+resource projectIdentityRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (createRoleAssignments) {
+  name: guid(aiFoundry.id, 'project-identity', aiProject.id, foundryUserRoleId)
+  scope: aiFoundry
+  properties: {
+    principalId: aiProject.identity.principalId
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', foundryUserRoleId)
+    principalType: 'ServicePrincipal'
   }
 }
 
@@ -209,3 +222,4 @@ output aiFoundryName string = aiFoundry.name
 output aiFoundryEndpoint string = aiFoundry.properties.endpoint
 output aiFoundryId string = aiFoundry.id
 output aiProjectName string = aiProject.name
+output aiProjectEndpoint string = aiProject.properties.endpoints['AI Foundry API']

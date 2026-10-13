@@ -2,11 +2,11 @@
 
 ## Architecture
 
-This is an **Azure Developer CLI (azd) template** that deploys a Microsoft Foundry account with one primary model (DeepSeek-R1-0528 by default) and provides working examples in **Python, TypeScript, C#, Java, and Go**. Secondary and third deployments are opt-in.
+This is an **Azure Developer CLI (azd) template** that deploys a Microsoft Foundry account with one primary model (DeepSeek-V3.2 by default) and provides working examples in **Python, TypeScript, C#, Java, and Go**. Secondary and third deployments are opt-in.
 
 - **Infra layer** (`infra/`): Subscription-scoped Bicep. [main.bicep](../infra/main.bicep) creates the resource group and delegates to [foundry.bicep](../infra/foundry.bicep), which provisions `Microsoft.CognitiveServices/accounts` (kind `AIServices`), a project sub-resource, and model deployments (primary + optional secondary + optional third).
 - **App layer** (`src/`): Each language has a one-request **Responses API** quickstart using its standard **OpenAI SDK** (not Azure-specific SDK wrappers). Python is the canonical feature implementation with an explicit `--example` CLI and small local modules. There is no web app, API server, or deployment target.
-- **Glue**: [azure.yaml](../azure.yaml) wires azd to the Bicep infra. Environment variables flow from Bicep outputs → azd env → app code via `os.environ` (or equivalent).
+- **Glue**: [azure.yaml](../azure.yaml) wires azd to the Bicep infra. Environment variables flow from Bicep outputs → an idempotent post-provision `.env` update → app code via `os.environ` (or equivalent). The hook requires a nonblank project endpoint and primary deployment alias, preserves unrelated lines, and de-duplicates its managed keys.
 
 ## Key Conventions
 
@@ -33,7 +33,7 @@ client = OpenAI(
     base_url=endpoint.rstrip("/") + "/openai/v1",
     api_key=get_bearer_token_provider(credential, "https://ai.azure.com/.default"),
 )
-model = os.environ.get("AZURE_MODEL_DEPLOYMENT_NAME", "DeepSeek-R1-0528")
+model = os.environ.get("AZURE_MODEL_DEPLOYMENT_NAME", "DeepSeek-V3.2")
 response = client.responses.create(model=model, input="...", max_output_tokens=500)
 ```
 
@@ -50,7 +50,7 @@ const client = new OpenAI({
   baseURL: process.env.AZURE_AI_PROJECT_ENDPOINT!.replace(/\/+$/, "") + "/openai/v1",
   apiKey: token.token,
 });
-const model = process.env.AZURE_MODEL_DEPLOYMENT_NAME ?? "DeepSeek-R1-0528";
+const model = process.env.AZURE_MODEL_DEPLOYMENT_NAME ?? "DeepSeek-V3.2";
 const response = await client.responses.create({ model, input: "...", max_output_tokens: 500 });
 ```
 
@@ -63,7 +63,7 @@ var token = credential.GetToken(new TokenRequestContext(["https://ai.azure.com/.
 var client = new OpenAIClient(
     new ApiKeyCredential(token.Token),
     new OpenAIClientOptions { Endpoint = new Uri(endpoint.TrimEnd('/') + "/openai/v1") });
-var model = Environment.GetEnvironmentVariable("AZURE_MODEL_DEPLOYMENT_NAME") ?? "DeepSeek-R1-0528";
+var model = Environment.GetEnvironmentVariable("AZURE_MODEL_DEPLOYMENT_NAME") ?? "DeepSeek-V3.2";
 var responsesClient = client.GetResponsesClient(model);
 var response = await responsesClient.CreateResponseAsync(new CreateResponseOptions(
     [ResponseItem.CreateUserMessageItem("...")])
@@ -103,16 +103,19 @@ client := openai.NewClient(
 ```
 
 ### Authentication
-Use **keyless** via `DefaultAzureCredential` (EntraID). Users need the `Cognitive Services User` role on the Microsoft Foundry account. Token audience is always `https://ai.azure.com/.default`.
+Use **keyless** via `DefaultAzureCredential` (EntraID). Callers need the **Foundry User** role on the Microsoft Foundry account. Token audience is always `https://ai.azure.com/.default`.
+
+Role assignment creation is opt-in. `AZURE_CREATE_ROLE_ASSIGNMENTS` defaults to `false`, so normal deployments reuse existing inherited access and require no role-assignment write permission. When an authorized administrator sets it to `true`, Bicep creates account-scoped Foundry User assignments for the deploying user and the Foundry project's system-assigned identity. This opt-in requires `Microsoft.Authorization/roleAssignments/write`.
 
 ### Environment variables
 Set from `azd env get-values` after provisioning:
 - `AZURE_AI_PROJECT_ENDPOINT` — the project endpoint; used as `base_url` with `/openai/v1` suffix
-- `AZURE_MODEL_DEPLOYMENT_NAME` — primary model deployment alias (default: `DeepSeek-R1-0528`); read by every quickstart
+- `AZURE_MODEL_DEPLOYMENT_NAME` — primary model deployment alias (default: `DeepSeek-V3.2`); read by every quickstart
 - `AZURE_MODEL_2_DEPLOYMENT_NAME` — optional second deployment alias; empty when skipped
 - `AZURE_MODEL_3_DEPLOYMENT_NAME` — optional third deployment alias; empty when skipped
+- `AZURE_CREATE_ROLE_ASSIGNMENTS` — optional RBAC creation flag; defaults to `false`
 
-Normal sample code reads only `AZURE_MODEL_DEPLOYMENT_NAME`, falling back to `DeepSeek-R1-0528`. Treat deployment aliases as opaque: do not infer providers or capabilities from their values.
+Normal sample code reads only `AZURE_MODEL_DEPLOYMENT_NAME`, falling back to `DeepSeek-V3.2`. Treat deployment aliases as opaque: do not infer providers or capabilities from their values.
 
 ### Bicep conventions
 - Target scope is `subscription` in `main.bicep`; resource-group-scoped resources go in `foundry.bicep` module.
